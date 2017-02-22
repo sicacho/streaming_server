@@ -19,6 +19,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Controller;
@@ -49,7 +50,7 @@ public class StreamingController {
   @RequestMapping(method = {GET, HEAD}, value = "/play/{id}")
   public ResponseEntity<Resource> download(@PathVariable long id,
                                            @RequestHeader(name = "Range",required = false) String ranger) throws IOException, GeneralSecurityException {
-    ByteArrayOutputStream outputStream = new ByteArrayOutputStream(1600000);
+    ByteArrayOutputStream outputStream = new ByteArrayOutputStream(16000);
     String urlG = "https://drive.google.com/open?id=0B3YJQgQ5nWc3Mm1sTkxyTXRPSHM";
     GoogleDriveService googleDriveService = new GoogleDriveService();
     Credential credential = googleDriveService.authorize();
@@ -70,36 +71,26 @@ public class StreamingController {
     System.out.println("Download at : " + result.get(0).getFile());
     HttpHeaders httpHeadersCookies = new HttpHeaders();
     httpHeadersCookies.set("cookie", response.getHeaders().getHeaderStringValues("set-cookie"));
-    com.google.api.client.http.HttpResponse response_head = service.getRequestFactory().buildHeadRequest(new GenericUrl( result.get(0).getFile())).setHeaders(httpHeadersCookies).execute();
+    com.google.api.client.http.HttpResponse response_head = service.getRequestFactory().buildGetRequest(new GenericUrl( result.get(0).getFile())).setHeaders(httpHeadersCookies).execute();
     long content_length = response_head.getHeaders().getContentLength();
     org.springframework.http.HttpHeaders httpHeaders = new org.springframework.http.HttpHeaders();
     httpHeaders.setContentLength(content_length);
-    httpHeaders.set("Accept-Ranges",response_head.getHeaders().getAccept());
-    httpHeaders.set("Content-Range",response_head.getHeaders().getContentRange());
+    httpHeaders.set("Accept-Ranges", response_head.getHeaders().getHeaderStringValues("Accept-Ranges").get(0));
+    httpHeaders.set("Content-Range","bytes 0-18971575/18971576");
     httpHeaders.set("Content-Type",response_head.getHeaders().getContentType());
-    Runnable runnable = new Runnable() {
-      @Override
-      public void run() {
-        try {
-          HttpTransport httpTransport = new ApacheHttpTransport();
-          MediaHttpDownloader downloader = new MediaHttpDownloader(httpTransport, httpTransport.createRequestFactory(new HttpRequestInitializer() {
-            @Override
-            public void initialize(HttpRequest request) throws IOException {
-              HttpHeaders httpHeaders = new HttpHeaders();
-              httpHeaders.set("cookie", response.getHeaders().getHeaderStringValues("set-cookie"));
-              request.setHeaders(httpHeaders);
-            }
-          }).getInitializer());
-          downloader.setChunkSize(400000);
-          downloader.download(new GenericUrl(result.get(0).getFile()), outputStream);
-        } catch (IOException e) {
-          e.printStackTrace();
-        }
-      }
-    };
-    Thread thread = new Thread(runnable);
-    thread.start();
-    Resource resource = new ByteArrayResource(outputStream.toByteArray());
+//    response_head.disconnect();
+//    HttpTransport httpTransport = new ApacheHttpTransport();
+//    MediaHttpDownloader downloader = new MediaHttpDownloader(httpTransport, httpTransport.createRequestFactory(new HttpRequestInitializer() {
+//      @Override
+//      public void initialize(HttpRequest request) throws IOException {
+//        HttpHeaders httpHeaders = new HttpHeaders();
+//        httpHeaders.set("cookie", response.getHeaders().getHeaderStringValues("set-cookie"));
+//        request.setHeaders(httpHeaders);
+//      }
+//    }).getInitializer());
+//    downloader.setChunkSize(4000);
+//    downloader.download(new GenericUrl(result.get(0).getFile()), outputStream);
+    Resource resource = new InputStreamResource(response_head.getContent());
     ResponseEntity<Resource> resourceResponseEntity = ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).headers(httpHeaders).body(resource);
     return resourceResponseEntity;
   }
