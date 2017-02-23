@@ -17,6 +17,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 import javax.servlet.http.HttpSession;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -55,7 +57,7 @@ public class StreamingController {
   @RequestMapping(method = {GET, HEAD}, value = "/play/{id}")
   public ResponseEntity<Resource> download(@PathVariable long id,
                                            @RequestHeader(name = "Range", required = false) String ranger) throws IOException, GeneralSecurityException {
-    String urlG = "https://drive.google.com/open?id=0B3YJQgQ5nWc3Mm1sTkxyTXRPSHM";
+    String urlG = "https://drive.google.com/open?id=0B8q0TNKqADEHTUY5WVU3Zk5vb28";
     GoogleDriveService googleDriveService = new GoogleDriveService();
     String from = "0";
     List<UrlDTO> result;
@@ -76,12 +78,6 @@ public class StreamingController {
         if (ch != -1) doc += (char) ch;
       }
 
-      if (ranger == null) {
-        ranger = "bytes=0-";
-      } else {
-        String[] froms = ranger.split("=");
-        from = froms[1].replace("-", "");
-      }
       result = parseFromHtml(doc, new ArrayList<>());
       session.setAttribute(String.valueOf(id),result);
       session.setAttribute(id+"-cookie",response);
@@ -89,21 +85,31 @@ public class StreamingController {
       result = (List<UrlDTO>) session.getAttribute(String.valueOf(id));
       response = (HttpResponse) session.getAttribute(id+"-cookie");
     }
+    if (ranger == null) {
+      ranger = "bytes=0-";
+    } else {
+      String[] froms = ranger.split("=");
+      from = froms[1].replace("-", "");
+    }
 
     System.out.println("Download at : " + result.get(0).getFile());
     HttpHeaders httpHeadersCookies = new HttpHeaders();
     httpHeadersCookies.set("cookie", response.getHeaders().getHeaderStringValues("set-cookie"));
     httpHeadersCookies.set("Range", Arrays.asList(ranger));
     com.google.api.client.http.HttpResponse response_head = service.getRequestFactory().buildGetRequest(new GenericUrl(result.get(0).getFile())).setHeaders(httpHeadersCookies).execute();
-    long content_length = response_head.getHeaders().getContentLength();
-
+    long content_length = 0;
+    if(session.getAttribute("content_length")==null) {
+      content_length = response_head.getHeaders().getContentLength();
+      session.setAttribute("content_length",content_length);
+    } else {
+      content_length = (long) session.getAttribute("content_length");
+    }
     org.springframework.http.HttpHeaders httpHeaders = new org.springframework.http.HttpHeaders();
-    httpHeaders.setContentLength(content_length);
-
-    httpHeaders.set("Accept-Ranges", response_head.getHeaders().getAccept());
-    httpHeaders.set("Content-Range", "bytes " + from + "-" + (content_length - 1) + "/" + content_length);
-    httpHeaders.set("Content-Type", response_head.getHeaders().getContentType());
-    Resource resource = new InputStreamResource(response_head.getContent());
+    httpHeaders.set("content-Length", String.valueOf(content_length));
+    httpHeaders.set("accept-ranges", "bytes");
+    httpHeaders.set("content-range", "bytes " + from + "-" + (content_length - 1) + "/" + content_length);
+    httpHeaders.set("content-type", response_head.getHeaders().getContentType());
+    Resource resource = new InputStreamResource(new BufferedInputStream(response_head.getContent(),160000));
     ResponseEntity<Resource> resourceResponseEntity = ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).headers(httpHeaders).body(resource);
     return resourceResponseEntity;
   }

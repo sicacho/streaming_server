@@ -1,8 +1,6 @@
 package com.streaming.service;
 
 import com.google.api.client.auth.oauth2.Credential;
-import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
-import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
@@ -92,8 +90,8 @@ public class GoogleDriveService {
             .setDataStoreFactory(DATA_STORE_FACTORY)
             .setAccessType("offline").setApprovalPrompt("auto")
             .build();
-    Credential credential = new AuthorizationCodeInstalledApp(
-        flow, new LocalServerReceiver()).authorize("432161060989");
+    Credential credential = flow.loadCredential("432161060989");
+
     System.out.println(
         "Credentials saved to " + DATA_STORE_DIR.getAbsolutePath());
     return credential;
