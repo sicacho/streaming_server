@@ -24,7 +24,7 @@ import java.util.List;
 public class GoogleDriveService {
 
   private final java.io.File DATA_STORE_DIR = new java.io.File(
-      System.getProperty("user.home"), ".credentials/copydrive");
+      System.getProperty("user.home"), ".credentials/drive-java-quickstart");
 
   /**
    * Global instance of the {@link FileDataStoreFactory}.
@@ -90,6 +90,7 @@ public class GoogleDriveService {
             .setDataStoreFactory(DATA_STORE_FACTORY)
             .setAccessType("offline").setApprovalPrompt("auto")
             .build();
+
     Credential credential = flow.loadCredential("432161060989");
 
     System.out.println(

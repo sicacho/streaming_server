@@ -1,5 +1,8 @@
 package com.streaming.domain;
 
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 /**
  * Created by Administrator on 4/15/2016.
  */
@@ -22,13 +25,13 @@ public class ConvertEntityToDto {
       urlDTO.setResolution(360);
     }
     urlDTO.setFile((url.split("\\|")[1]));
-//    urlDTO.setFile(urlDTO.getFile().replace("ipbits=48", "ipbits=0"));
-//    urlDTO.setFile(urlDTO.getFile().replace("ipbits=24", "ipbits=0"));
-//    String urlhead = "https://redirector.googlevideo.com";
-//    urlDTO.setFile(urlhead+"/videoplayback"+urlDTO.getFile().split("/videoplayback")[1]);
-//        List<TrackDto> trackDtos = new ArrayList<>();
-//        trackDtos.add(new TrackDto("thumbnails","https://doc-04-3k-docs.googleusercontent.com/docs/securesc/ha0ro937gcuc7l7deffksulhg5h7mbp1/jlsji0ad22meqajtku5sduo9stmm8n08/1480233600000/17129975411737702559/*/0B3YJQgQ5nWc3RHZPRWVLd0t6Ykk?e=download"));
-//        urlDTO.setTracks(trackDtos);
+    urlDTO.setFile(urlDTO.getFile().replace("ipbits=48", "ipbits=0"));
+    urlDTO.setFile(urlDTO.getFile().replace("ipbits=24", "ipbits=0"));
+    String urlhead = "https://redirector.googlevideo.com";
+    String redirectorUrl = urlhead + "/videoplayback" + urlDTO.getFile().split("/videoplayback")[1];
+    String[] params = redirectorUrl.split("&");
+    String redirectorURL_NoId = Stream.of(params).filter(s -> !s.toLowerCase().startsWith("driveid=")).collect(Collectors.joining("&"));
+    urlDTO.setFile(redirectorURL_NoId);
     return urlDTO;
   }
 }

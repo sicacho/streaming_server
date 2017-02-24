@@ -1,12 +1,12 @@
 package com.streaming.controller;
 
 import com.google.api.client.auth.oauth2.Credential;
-import com.google.api.client.http.GenericUrl;
-import com.google.api.client.http.HttpHeaders;
-import com.google.api.client.http.HttpResponse;
+import com.google.api.client.googleapis.media.MediaHttpDownloader;
+import com.google.api.client.http.*;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.drive.Drive;
+import com.google.api.services.drive.model.*;
 import com.streaming.domain.ConvertEntityToDto;
 import com.streaming.domain.Resolution;
 import com.streaming.domain.StringHelper;
@@ -23,15 +23,14 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpSession;
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLDecoder;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -55,61 +54,35 @@ public class StreamingController {
   HttpSession session;
 
   @RequestMapping(method = {GET, HEAD}, value = "/play/{id}")
+  @ResponseBody
   public ResponseEntity<Resource> download(@PathVariable long id,
                                            @RequestHeader(name = "Range", required = false) String ranger) throws IOException, GeneralSecurityException {
-    String urlG = "https://drive.google.com/open?id=0B8q0TNKqADEHTUY5WVU3Zk5vb28";
     GoogleDriveService googleDriveService = new GoogleDriveService();
     String from = "0";
-    List<UrlDTO> result;
-    com.google.api.client.http.HttpResponse response = null;
+
     Credential credential = googleDriveService.authorize();
-    Drive service = new Drive.Builder(new NetHttpTransport(), new JacksonFactory(), null)
-        .setHttpRequestInitializer(credential).setApplicationName("432161060989").build();
-    if (session.getAttribute(String.valueOf(id)) == null) {
-      response = service.getRequestFactory().buildGetRequest(new GenericUrl(urlG)).execute();
-      System.out.println("Download At : " + urlG);
-      InputStream inputStreamDoc = response.getContent();
-      String doc = "";
-      int ch = 0;
-      while (ch != -1) {
-
-        ch = inputStreamDoc.read();
-
-        if (ch != -1) doc += (char) ch;
-      }
-
-      result = parseFromHtml(doc, new ArrayList<>());
-      session.setAttribute(String.valueOf(id),result);
-      session.setAttribute(id+"-cookie",response);
-    } else {
-      result = (List<UrlDTO>) session.getAttribute(String.valueOf(id));
-      response = (HttpResponse) session.getAttribute(id+"-cookie");
-    }
     if (ranger == null) {
       ranger = "bytes=0-";
-    } else {
-      String[] froms = ranger.split("=");
-      from = froms[1].replace("-", "");
     }
-
-    System.out.println("Download at : " + result.get(0).getFile());
-    HttpHeaders httpHeadersCookies = new HttpHeaders();
-    httpHeadersCookies.set("cookie", response.getHeaders().getHeaderStringValues("set-cookie"));
-    httpHeadersCookies.set("Range", Arrays.asList(ranger));
-    com.google.api.client.http.HttpResponse response_head = service.getRequestFactory().buildGetRequest(new GenericUrl(result.get(0).getFile())).setHeaders(httpHeadersCookies).execute();
-    long content_length = 0;
-    if(session.getAttribute("content_length")==null) {
-      content_length = response_head.getHeaders().getContentLength();
-      session.setAttribute("content_length",content_length);
-    } else {
-      content_length = (long) session.getAttribute("content_length");
-    }
+    String finalRanger = ranger;
+    Drive service = new Drive.Builder(new NetHttpTransport(), new JacksonFactory(), null).setHttpRequestInitializer(credential).setApplicationName("432161060989").build();
+    com.google.api.services.drive.model.File model = service.files().get("0B6iOGhAfgoxVSE5qWEo1QW1sakk").setFields("size").execute();
+    long content_length = model.getSize();
+    HttpHeaders header = new HttpHeaders();
+    header.set("Accept-Ranges", "bytes");
+    header.setRange("bytes=0-");
+    Drive.Files.Get get = service.files().get("0B6iOGhAfgoxVSE5qWEo1QW1sakk");
+    get.setRequestHeaders(header);
+    InputStream stream = get.executeMediaAsInputStream();
+    long start = System.currentTimeMillis();
     org.springframework.http.HttpHeaders httpHeaders = new org.springframework.http.HttpHeaders();
     httpHeaders.set("content-Length", String.valueOf(content_length));
     httpHeaders.set("accept-ranges", "bytes");
     httpHeaders.set("content-range", "bytes " + from + "-" + (content_length - 1) + "/" + content_length);
-    httpHeaders.set("content-type", response_head.getHeaders().getContentType());
-    Resource resource = new InputStreamResource(new BufferedInputStream(response_head.getContent(),160000));
+    httpHeaders.set("content-type", "application/octet-stream");
+    Resource resource = new InputStreamResource(stream);
+    long end = System.currentTimeMillis();
+    System.out.println("Time : " + (start-end));
     ResponseEntity<Resource> resourceResponseEntity = ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).headers(httpHeaders).body(resource);
     return resourceResponseEntity;
   }
@@ -127,6 +100,51 @@ public class StreamingController {
           map(s1 -> ConvertEntityToDto.urlDTO(StringEscapeUtils.unescapeJava(s1))).
           collect(Collectors.toList());
       Collections.reverse(result);
+    }
+    return result;
+  }
+
+  @RequestMapping(method = {GET, HEAD}, value = "/playgoogle")
+  @ResponseBody
+  private List<UrlDTO> playGoogle(@RequestParam String googleId) {
+    List<UrlDTO> result = null;
+    try {
+      URL url = new URL("https://docs.google.com/get_video_info?mobile=true&docid="+googleId+"&authuser=0");
+      HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+      urlConnection.setRequestMethod("GET");
+      urlConnection.setRequestProperty("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36");
+      urlConnection.setRequestProperty("Referer","https://drive.google.com/drive/u/0/my-drive");
+      BufferedReader in = new BufferedReader(
+              new InputStreamReader(urlConnection.getInputStream()));
+      String inputLine;
+      StringBuffer response = new StringBuffer();
+
+      while ((inputLine = in.readLine()) != null) {
+        response.append(inputLine);
+      }
+      in.close();
+      String doc = response.toString();
+      String[] params = doc.split("&");
+      String linkRaw = Arrays.stream(params).
+              filter(s -> s.startsWith("fmt_stream_map=")).
+              map(s1 -> s1.replace("fmt_stream_map=","")).findFirst().get();
+      String[] links = null;
+      try {
+        links = URLDecoder.decode(linkRaw,"UTF-8").split(",");
+      } catch (UnsupportedEncodingException e) {
+        e.printStackTrace();
+      }
+      if(links!=null) {
+        result = Arrays.stream(links).
+                filter(s -> StringHelper.isNotStartwith(s, Resolution.values())).
+                map(s1 -> ConvertEntityToDto.urlDTO(StringEscapeUtils.unescapeJava(s1))).
+                collect(Collectors.toList());
+        Collections.sort(result,(o1, o2) -> o1.getResolution()-o2.getResolution());
+      }
+    } catch (MalformedURLException e) {
+      e.printStackTrace();
+    } catch (IOException e) {
+      e.printStackTrace();
     }
     return result;
   }
